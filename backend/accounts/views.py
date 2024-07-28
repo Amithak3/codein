@@ -1,48 +1,51 @@
-from rest_framework import generics
-from rest_framework.response import Response
-from rest_framework import status
+from django.shortcuts import render, redirect
+from django.http import HttpResponse
 from django.contrib.auth.models import User
-from accounts.serializers import UserSerializer,UserLoginSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
+from django.contrib import messages
+from django.template import loader
+from django.contrib.auth import authenticate, login, logout
 
+def register_user(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        
+        if User.objects.filter(username=username).exists():
+            messages.info(request, "Username already exists")
+            return redirect('/auth/register/')
+        
+        user = User.objects.create_user(username=username, password=password)
+        user.save()
 
-class UserLogoutAPIView(APIView):
-    authentication_classes = []
-    permission_classes = []
+        messages.info(request, "Registered Successfully")
+        return redirect('/auth/register/')
+    
+    template = loader.get_template('register.html')
+    context = {}
+    return HttpResponse(template.render(context, request))
 
-    def post(self, request):
-        try:
-            refresh_token = request.data["refresh"]
-            print(refresh_token)
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({"detail": "Successfully logged out."})
-        except Exception as e:
-            return Response({"detail": "Invalid token."}, status=400)
+def login_user(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
 
+        user = authenticate(username=username, password=password)
 
-class UserLoginAPIView(generics.GenericAPIView):
-    authentication_classes = []
-    permission_classes = []
-    serializer_class = UserLoginSerializer
+        if user is None:
+            messages.info(request, "Invalid username or password")
+            return redirect('/auth/login/')
 
-    def post(self, request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(serializer.validated_data)
+        login(request, user)
+        return redirect('/home/all/')
+    
+    template = loader.get_template('login.html')
+    context = {}
+    return HttpResponse(template.render(context, request))
 
+def logout_user(request):
+    logout(request)
+    messages.info(request, "Logout Successful")
+    return redirect('/auth/login/')
 
-class UserRegistrationAPIView(generics.CreateAPIView):
-    authentication_classes = []
-    permission_classes = []
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+def start(request):
+    return render(request, 'start.html')

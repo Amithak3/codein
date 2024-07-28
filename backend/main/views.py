@@ -1,142 +1,160 @@
-from rest_framework import generics
-from main.models import Problem,TestCase,Solution
-from main.serializers import ProblemSerializer
-import subprocess
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from datetime import datetime
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from main.models import Problem, CodeSubmission, Submission, TestCase
+from main.forms import CodeSubmissionForm
+from django.conf import settings
+from pathlib import Path
 import uuid
+import subprocess
 import os
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
 
+@login_required
+def question(request):
+    question = Problem.objects.all()
+    context = {
+        'question': question,
+    }
+    return render(request, 'question.html', context)
 
+@login_required
+def question_detail(request, question_id):
+    question = get_object_or_404(Problem, pk=question_id)
+    output = None
+    verdict = None
 
-class ProblemListAPIView(generics.ListAPIView):
-    queryset = Problem.objects.all()
-    serializer_class = ProblemSerializer
+    if request.method == 'POST':
+        if 'run' in request.POST:
+            form = CodeSubmissionForm(request.POST)
+            if form.is_valid():
+                language = form.cleaned_data['language']
+                code = form.cleaned_data['code']
+                input_data = form.cleaned_data['input_data']
+                output = run_code(language, code, input_data)
+                return JsonResponse({'output': output})
 
-    authentication_classes = [JWTAuthentication]  # Use JWT authentication
-    permission_classes = [IsAuthenticated]  # Require authentication to access the API
+        elif 'submit' in request.POST:
+            form = CodeSubmissionForm(request.POST)
+            if form.is_valid():
+                submission = form.save(commit=False)
+                submission.question = question
+                submission.user = request.user
+                submission.output_data = run_code(submission.language, submission.code, submission.input_data)
+                submission.save()
+                verdict = check_test_cases(submission)
+                submission.verdict = verdict
+                submission.save()
+                context = {
+                    'question': question,
+                    'form': form,
+                    'output': submission.output_data,
+                    'verdict': verdict,
+                }
+                return render(request, 'question_detail.html', context)
 
+    else:
+        form = CodeSubmissionForm()
 
-class ProblemDetailAPIView(generics.RetrieveAPIView):
-    queryset = Problem.objects.all()
-    serializer_class = ProblemSerializer
-    lookup_field = "code"
+    context = {
+        'question': question,
+        'form': form,
+    }
+    return render(request, 'question_detail.html', context)
 
-    authentication_classes = [JWTAuthentication]  # Use JWT authentication
-    permission_classes = [IsAuthenticated]
+def run_code(language, code, input_data):
+    project_path = Path(settings.BASE_DIR)
+    directories = ("codes", "Inputs", "Outputs")
 
+    for directory in directories:
+        dir_path = project_path / directory
+        if not dir_path.exists():
+            dir_path.mkdir(parents=True, exist_ok=True)
 
-class ExecuteCodeAPIView(APIView):
-    authentication_classes = [JWTAuthentication]  # Use JWT authentication
-    permission_classes = [IsAuthenticated]
+    codes_dir = project_path / "codes"
+    inputs_dir = project_path / "Inputs"
+    outputs_dir = project_path / "Outputs"
 
-    def post(self, request):
-        lang = request.data.get("lang")
-        problem_code = request.data.get("problem_code")
-        code = request.data.get("code")
+    unique = str(uuid.uuid4())
 
-        if lang not in ["c", "cpp", "py"]:
-            return Response(
-                {"error": "Invalid language"}, status=status.HTTP_400_BAD_REQUEST
-            )
+    # File extensions based on language
+    ext_map = {"cpp": "cpp", "py": "py", "c": "c"}
+    code_file_name = f"{unique}.{ext_map[language]}"
+    input_file_name = f"{unique}.txt"
+    output_file_name = f"{unique}.txt"
 
-        folder_name = "InputCodes"
+    code_file_path = codes_dir / code_file_name
+    input_file_path = inputs_dir / input_file_name
+    output_file_path = outputs_dir / output_file_name
 
-        os.makedirs(folder_name, exist_ok=True)
-        os.makedirs("GeneratedOutput", exist_ok=True)
+    with open(code_file_path, "w") as code_file:
+        code_file.write(code)
 
-        curr_dir = os.getcwd()
-        folder_path = os.path.join(curr_dir, folder_name)
-        uniquename = uuid.uuid4().hex
-        unique_filename = f"{uniquename}.{lang}"
-        file_path = os.path.join(folder_path, unique_filename)
+    with open(input_file_path, "w") as input_file:
+        input_file.write(input_data)
 
-        with open(file_path, "w") as f:
-            f.write(code)
-        os.chdir(folder_path)
-
-        problem = Problem.objects.filter(code=problem_code).first()
-        test_case = TestCase.objects.filter(problem=problem).first()
-        input_path=test_case.input
-        output_path=test_case.output
-        # print(input_path)
-        # print(output_path)
-
-        try:
-            if lang == "c":
-                # On Mac, use clang instead of gcc for compiling C code
-                result = subprocess.run(
-                    ["clang", f"{unique_filename}", "-o", uniquename]
+    # Compile and run based on language
+    if language == "cpp":
+        executable_path = codes_dir / unique
+        compile_result = subprocess.run(
+            ["g++", str(code_file_path), "-o", str(executable_path)],
+            capture_output=True,
+            text=True
+        )
+        if compile_result.returncode == 0:
+            with open(input_file_path, "r") as input_file:
+                with open(output_file_path, "w") as output_file:
+                    subprocess.run(
+                        [str(executable_path)],
+                        stdin=input_file,
+                        stdout=output_file,
+                    )
+    elif language == "c":
+        executable_path = codes_dir / unique
+        compile_result = subprocess.run(
+            ["gcc", str(code_file_path), "-o", str(executable_path)],
+            capture_output=True,
+            text=True
+        )
+        if compile_result.returncode == 0:
+            with open(input_file_path, "r") as input_file:
+                with open(output_file_path, "w") as output_file:
+                    subprocess.run(
+                        [str(executable_path)],
+                        stdin=input_file,
+                        stdout=output_file,
+                    )
+    elif language == "py":
+        with open(input_file_path, "r") as input_file:
+            with open(output_file_path, "w") as output_file:
+                subprocess.run(
+                    ["python", str(code_file_path)],
+                    stdin=input_file,
+                    stdout=output_file,
                 )
-                if result.returncode == 0:
-                    os.chdir(curr_dir)
-                    print(os.getcwd())
-                    # On Mac, execute the compiled executable with input redirection and output file
-                    with open(f"{input_path}", "r") as input_file:
-                        with open(
-                            f"./GeneratedOutput/{uniquename}.txt", "w"
-                        ) as output_file:
-                            output = subprocess.run(
-                                [f"./InputCodes/{uniquename}"],
-                                stdin=input_file,
-                                stdout=output_file,
-                            )
 
-            elif lang == "cpp":
-                result = subprocess.run(
-                    ["clang++", f"{unique_filename}", "-o", uniquename]
-                )
-                if result.returncode == 0:
-                    os.chdir(curr_dir)
-                    print(os.getcwd())
-                    # Create GeneratedOutput directory if it doesn't exist
-                    generated_output_dir = "./GeneratedOutput"
-                    os.makedirs(generated_output_dir, exist_ok=True)
-                    # On Mac, execute the compiled executable with input redirection and output file
-                    with open(f"{input_path}", "r") as input_file:
-                        output_file_path = f"./GeneratedOutput/{uniquename}.txt"
-                        with open(output_file_path, "w") as output_file:
-                            subprocess.run(
-                                [f"./InputCodes/{uniquename}"],
-                                stdin=input_file,
-                                stdout=output_file,
-                            )
+    with open(output_file_path, "r") as output_file:
+        output_data = output_file.read()
+    
+    # Clean up
+    os.remove(code_file_path)
+    os.remove(input_file_path)
+    os.remove(output_file_path)
 
-            elif lang == "py":
-                os.chdir(curr_dir)
-                print(os.getcwd())
-                # On Mac, execute the Python script with input redirection and output file
-                with open(f"{input_path}", "r") as input_file:
-                    output_file_path = f"./GeneratedOutput/{uniquename}.txt"
-                    with open(output_file_path, "w") as output_file:
-                        subprocess.run(
-                            ["python3", f"InputCodes/{uniquename}.py"],
-                            stdin=input_file,
-                            stdout=output_file,
-                        )
+    return output_data
 
-            with open(f"GeneratedOutput/{uniquename}.txt", "r") as gen_file:
-                generated_output = gen_file.read()
-            with open(f"{output_path}", "r") as ref_file:
-                reference_output = ref_file.read()
-                # Compare the contents of the files
-            verdict = "Accepted" if generated_output.strip() == reference_output.strip() else "Wrong Answer"
 
-            # Create a Solution instance and save it to the database
-            solution = Solution.objects.create(
-                problem=problem,
-                verdict=verdict
-            )
-
-            return Response(
-                {"output": generated_output, "result": verdict},
-                status=status.HTTP_200_OK,
-            )
-        except Exception as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+def check_test_cases(code_submission):
+    question = code_submission.question
+    test_cases = question.testcase_set.all()
+    verdict = "Accepted"
+    
+    for test_case in test_cases:
+        input_data = test_case.input
+        expected_output = test_case.expected_output
+        user_output = run_code(code_submission.language, code_submission.code, input_data)
+        
+        if user_output.strip() != expected_output.strip():
+            verdict = "Rejected"
+            break
+            
+    return verdict
