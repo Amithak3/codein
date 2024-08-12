@@ -30,6 +30,12 @@
             text-align: center;
             margin-bottom: 20px;
         }
+        h2 {
+            color: #004d40;
+            text-align: center;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
         .table {
             background-color: #ffffff;
         }
@@ -64,7 +70,7 @@
             box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
             border: 2px solid #00695c;
         }
-        .dark-mode h1 {
+        .dark-mode h1, .dark-mode h2 {
             color: #b2dfdb;
         }
         .dark-mode .table {
@@ -98,6 +104,12 @@
         .btn-danger:hover {
             background-color: #b71c1c;
         }
+        .form-group label {
+            color: #004d40;
+        }
+        .form-control {
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
@@ -120,7 +132,7 @@
                     <tbody>
                         {% for question in questions %}
                             <tr>
-                                <td><a href="{% url 'question_details' question.id %}">{{ question.name }}</a></td>
+                                <td><a href="{% url 'question_detail' question.id %}">{{ question.name }}</a></td>
                             </tr>
                         {% endfor %}
                     </tbody>
@@ -131,7 +143,8 @@
                 </div>
             {% endif %}
         </main>
-    </div>
+
+
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>

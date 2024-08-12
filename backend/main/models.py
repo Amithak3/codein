@@ -4,8 +4,8 @@ from django.contrib.auth.models import User
 
 # Define the Problem model
 class Problem(models.Model):
-    title = models.CharField(max_length=255)
-    description = models.TextField()
+    title = models.CharField(max_length=255, default="Untitled Problem")
+    description = models.TextField(default="Default description")
     
 
     def __str__(self):
@@ -14,7 +14,7 @@ class Problem(models.Model):
 # Define the Solution model
 class Solution(models.Model):
     problem = models.ForeignKey(Problem, on_delete=models.CASCADE)
-    content = models.TextField()
+    content = models.TextField(default="Default content")
 
     def __str__(self):
         return f"Solution to {self.problem.title}"
@@ -23,7 +23,7 @@ class Solution(models.Model):
 class TestCase(models.Model):
     problem = models.ForeignKey(Problem, on_delete=models.CASCADE)
     input = models.TextField()
-    expected_output = models.TextField()
+    expected_output = models.TextField(default="Default output")
 
     def __str__(self):
         return f"Test Case for {self.problem.title}"
