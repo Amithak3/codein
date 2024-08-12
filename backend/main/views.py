@@ -1,13 +1,17 @@
+print("Importing views")
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
-from main.models import Problem, CodeSubmission, Submission, TestCase
-from main.forms import CodeSubmissionForm
+from .models import Problem, CodeSubmission, Submission, TestCase
+from .forms import CodeSubmissionForm
 from django.conf import settings
 from pathlib import Path
 import uuid
 import subprocess
 import os
+
+print("Imports successful in views")
 
 @login_required
 def question(request):

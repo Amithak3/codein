@@ -20,9 +20,10 @@ from django.views.generic import RedirectView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('auth/',include('account.urls')),
+    path('auth/',include('accounts.urls')),
     path('home/',include('main.urls')),
-    path('', RedirectView.as_view(url='/auth/start/', permanent=False)),  # Redirect root to /auth/start/
+    
+
 
 
 ]

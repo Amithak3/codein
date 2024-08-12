@@ -36,7 +36,7 @@ def login_user(request):
             return redirect('/auth/login/')
 
         login(request, user)
-        return redirect('/home/all/')
+        return redirect('/main/all/')
     
     template = loader.get_template('login.html')
     context = {}
